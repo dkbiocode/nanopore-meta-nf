@@ -12,7 +12,7 @@ params.plasmid_size_select = "10000000" // Passed to seqkit seq -m {}.
                                         // Karla-Vasco used 3M file size using 
                                         // find but I'm subsampling input fastqs
 
-infile_pat="${params.datadir}/*.25.fastq.gz" // only subsampled by frac
+infile_pat="${params.datadir}/*.*.fastq.gz" // only subsampled by frac
 //infile_pat="${params.datadir}/*.fastq.gz"
 
 // DIAMOND ANNOTATIONS
@@ -26,7 +26,7 @@ hmdarg_annotation_path="${launchDir}/HMDARG/annotations_hmd-arg.csv"
 params.nanoq_stats_outdir="${launchDir}/nanoq_stats"
 // assembly flye/medaka
 params.assembly_stats_outdir="${launchDir}/assemblies/stats"
-params.medaka_contigs_outdir="${launchDir}/assemblies/medaka"
+params.medaka_consensus_outdir="${launchDir}/assemblies/medaka"
 params.medaka_gaps_outdir="${launchDir}/assemblies/medaka_gaps"
 params.assembly_outdir="${launchDir}/assemblies/chromosome" // chromosome filters out plasmids
 // prodigal
@@ -142,15 +142,15 @@ process FLYE {
 
 process MEDAKA {
     container params.medaka_sif
-    publishDir "${params.medaka_contigs_outdir}", pattern: "medaka_out/*.contigs.fasta"
-    publishDir "${params.medaka_gaps_outdir}", pattern: "medaka_out/*.bed"
+    publishDir "${params.medaka_consensus_outdir}", pattern: "medaka_out/*.consensus.fasta"
+    publishDir "${params.medaka_gaps_outdir}", pattern: "medaka_out/*.consensus.fasta.gaps_in_draft_coords.bed"
 
     input: 
     tuple path(nanofilt_fastq_gz), path(contig_fasta)
 
     output:
     path "medaka_out/*.consensus.fasta", emit: consensus
-    path "medaka_out/consensus.fasta.gaps_in_draft_coords.bed", emit: gaps
+    path "medaka_out/*.consensus.fasta.gaps_in_draft_coords.bed", emit: gaps
 
 
     script:
@@ -168,6 +168,7 @@ process MEDAKA {
     -m r941_prom_hac_g507
 
     ln -v medaka_out/consensus.fasta medaka_out/${sample_name}.consensus.fasta
+    ln -v medaka_out/consensus.fasta.gaps_in_draft_coords.bed medaka_out/${sample_name}.consensus.fasta.gaps_in_draft_coords.bed
     """
 
 }
