@@ -12,7 +12,7 @@ params.plasmid_size_select = "10000000" // Passed to seqkit seq -m {}.
                                         // Karla-Vasco used 3M file size using 
                                         // find but I'm subsampling input fastqs
 
-infile_pat="${params.datadir}/*.*.fastq.gz" // only subsampled by frac
+infile_pat="${params.datadir}/*.fastq.gz" // only subsampled by frac
 //infile_pat="${params.datadir}/*.fastq.gz"
 
 // DIAMOND ANNOTATIONS
@@ -28,7 +28,7 @@ params.nanoq_stats_outdir="${launchDir}/nanoq_stats"
 params.assembly_stats_outdir="${launchDir}/assemblies/stats"
 params.medaka_consensus_outdir="${launchDir}/assemblies/medaka"
 params.medaka_gaps_outdir="${launchDir}/assemblies/medaka_gaps"
-params.assembly_outdir="${launchDir}/assemblies/chromosome" // chromosome filters out plasmids
+params.assembly_outdir="${launchDir}/assemblies" 
 // prodigal
 params.prodigal_outdir="${launchDir}/prodigal"
 params.prodigal_coords_gbk_outdir="${params.prodigal_outdir}/gbk"
@@ -181,10 +181,11 @@ process REMOVE_PLASMIDS {
     path full_assembly_fasta
 
     output:
-    tuple val(full_assembly_fasta.baseName), path("filtered/${full_assembly_fasta.name}")
+    path "filtered/*.fasta"
 
     script:
-    def outfile = "filtered/${full_assembly_fasta.name}"
+    def sample_name = full_assembly_fasta.name - '.consensus.fasta'
+    def outfile = "filtered/${sample_name}.fasta"
     """
     mkdir -v filtered
     seqkit seq -m ${params.plasmid_size_select} < ${full_assembly_fasta} > ${outfile}
@@ -205,9 +206,14 @@ process PRODIGAL {
     publishDir "${params.prodigal_proteins_outdir}", pattern: "*_proteins.faa"
 
     input:
-    tuple val(sample_name), path(assembly_fasta)
+    path assembly_fasta
+
+    output:
+    path "*_coords.gbk", emit: prodigal_gbk
+    path "*_proteins.faa", emit: prodigal_faa
 
     script:
+    def sample_name = assembly_fasta - '.fasta'
     """
     prodigal -i ${assembly_fasta} \
     -o ${sample_name}_coords.gbk \
@@ -215,7 +221,25 @@ process PRODIGAL {
     -p meta
     """
 }
+process PROKKA {
+    conda params.nanop_env
 
+    input:
+    path assembly_fasta
+
+    script:
+    def sample_name = assembly_fasta - '.fasta'
+    """
+    mkdir -v prokka_out
+    prokka ${assembly_fasta} \
+    --outdir prokka_out --force \
+    --prefix ${sample_name}_ \
+    --genus Escherichia \
+    --evalue 0.001 \
+    --cpus ${task.cpus} \
+    --addgenes  
+    """
+}
 process DIAMOND {
     conda params.nanop_env
 
@@ -270,8 +294,12 @@ workflow {
 
     // create an assembly from each input (cat_fastq)
     ch_cat_fastq | PORECHOP | NANOFILT 
-    ch_assembly = FLYE(NANOFILT.out.filtered) | MEDAKA // | REMOVE_PLASMIDS
+    FLYE(NANOFILT.out.filtered) | MEDAKA 
+    PROKKA(MEDAKA.out.consensus)
+    PRODIGAL(MEDAKA.out.consensus)
+    
+    //ch_assembly = REMOVE_PLASMIDS(MEDAKA.out.consensus)
     // branch on the assembly
-    //ch_assembly | PRODIGAL | DIAMOND(ch_diamond_db) | RESISTOME
+    //ch_assembly | PRODIGAL //| DIAMOND(ch_diamond_db) | RESISTOME
     //ch_assembly | PROKKA
 }
