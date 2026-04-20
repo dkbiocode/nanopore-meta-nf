@@ -29,6 +29,7 @@ params.assembly_stats_outdir="${launchDir}/assemblies/stats"
 params.medaka_consensus_outdir="${launchDir}/assemblies/medaka"
 params.medaka_gaps_outdir="${launchDir}/assemblies/medaka_gaps"
 params.assembly_outdir="${launchDir}/assemblies" 
+params.prokka_out="${launchDir}/assemblies/prokka"
 // prodigal
 params.prodigal_outdir="${launchDir}/prodigal"
 params.prodigal_coords_gbk_outdir="${params.prodigal_outdir}/gbk"
@@ -213,7 +214,7 @@ process PRODIGAL {
     path "*_proteins.faa", emit: prodigal_faa
 
     script:
-    def sample_name = assembly_fasta - '.fasta'
+    def sample_name = assembly_fasta.name - '.fasta'
     """
     prodigal -i ${assembly_fasta} \
     -o ${sample_name}_coords.gbk \
@@ -223,17 +224,20 @@ process PRODIGAL {
 }
 process PROKKA {
     conda params.nanop_env
+    publishDir params.prokka_out, mode: 'copy'
 
     input:
     path assembly_fasta
 
+    output:
+    path "*_prokka"
+
     script:
-    def sample_name = assembly_fasta - '.fasta'
+    def sample_name = assembly_fasta.name - '.fasta'
     """
-    mkdir -v prokka_out
     prokka ${assembly_fasta} \
-    --outdir prokka_out --force \
-    --prefix ${sample_name}_ \
+    --outdir ${sample_name}_prokka --force \
+    --prefix ${sample_name}_prokka \
     --genus Escherichia \
     --evalue 0.001 \
     --cpus ${task.cpus} \
