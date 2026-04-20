@@ -10,11 +10,11 @@ I have modified it to run samples in parallel, employ both conda and apptainer s
 
 This graph is updated as the workflow expands to incorporate original pipeline elements. 
 
-Nextflow DAG 
+<img src="fig/dag.png" height=300 alt="Nextflow DAG">
 
 ## Performance 
 
-Nextflow analysis
+![Nextflow timeline analysis screenshot](fig/timeline.png)
 
 ## Data 
 
