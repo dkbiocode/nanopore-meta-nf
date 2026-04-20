@@ -17,13 +17,14 @@ This graph is updated as the workflow expands to incorporate original pipeline e
 ![Nextflow timeline analysis screenshot](fig/timeline.png)
 
 ## Data 
-
+<!-- This markdown code only seems to work on github -->
 * Development: Human oral swabs from (SRA)[^1][^2][^3] downsampled for scaling analysis only, not the data from the original pipeline (unpublished)[^4].
 * Production: ...
 
 
 ## Links and References
 
+<!-- This markdown code only seems to work on github -->
 [^1]: [bioproject/PRJNA624185](https://www.ncbi.nlm.nih.gov/bioproject/PRJNA624185)
 [^2]: [Baker JL *et al.*](https://www.ncbi.nlm.nih.gov/pubmed/33239396), "Deep metagenomics examines the oral microbiome during dental caries, revealing novel taxa and co-occurrences with host molecules.", Genome Res, 2021 Jan;31(1):64-74
 [^3]: [Original study github](https://github.com/jonbakerlab/nanopore-oral-genomes). Not implemented here (see[^4]).
