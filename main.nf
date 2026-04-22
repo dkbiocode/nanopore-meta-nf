@@ -294,7 +294,7 @@ println "Files in datadir: " + file(infile_pat).collect { it.name }
 workflow {
     // set up source channels
     ch_cat_fastq = Channel.fromPath(infile_pat, checkIfExists: true)
-   .map { pth => tuple(pth.name,    
+   .map { pth => tuple(val(pth.name), // isolate sample name to pass through channels 
                        path(pth)) 
     } 
     //ch_diamond_db = DIAMOND_DB.broadcast() // download/format databases
