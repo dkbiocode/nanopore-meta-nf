@@ -293,7 +293,7 @@ println "Files in datadir: " + file(infile_pat).collect { it.name }
 
 workflow {
     // set up source channels
-    ch_cat_fastq = Channel.fromPath(infile_pat, checkIfExists: true).collect().map
+    ch_cat_fastq = Channel.fromPath(infile_pat, checkIfExists: true).collect {[it.name,path(it)]} 
     //ch_diamond_db = DIAMOND_DB.broadcast() // download/format databases
 
     // create an assembly from each input (cat_fastq)
