@@ -1,13 +1,16 @@
 #!/usr/bin/env nextflow
 nextflow.enable.dsl=2
-
+user=System.getenv('USER')
 
 include { checkDirs; checkFiles } from './utils/helpers.nf'
+params.scratch="/scratch/alpine/$USER/ont-data-danielle"
+params.barcodes="${params.scratch}/Acinetobacterspp_ID.txt"
+params.workdir="${params.scratch}/work"
+workDir="${params.workdir}"
+params.datadir="${params.scratch}/data"
+params.fastq_pass="${params.datadir}/fastq_pass"
+params.fastq_concat="${params.datadir}/fastq_concat" // serves as publishDir. use hardlink to mirror from work dirs
 
-user=System.getenv('USER')
-params.scratch="/scratch/alpine/$USER"
-params.workdir="${params.scratch}/cef_strains/work"
-params.datadir="${params.scratch}/cef_strains/20210421_gDNA_ONT_2/fastq_pass/cat_fastq"
 params.plasmid_size_select = "10000000" // Passed to seqkit seq -m {}. 
                                         // Karla-Vasco used 3M file size using 
                                         // find but I'm subsampling input fastqs
@@ -67,6 +70,23 @@ checkFiles([
     "hmdarg_annotation_path": hmdarg_annotation_path
 ], true)
 */
+
+process CONCAT {
+    tag "${barcode}-${sample_name}"
+    publishDir "${params.fastq_concat}", pattern: "*.fastq.gz", mode: "link"
+
+    input:
+    tuple val(sample_name), val(barcode)
+
+    output:
+    tuple val(sample_name), path("${sample_name}.fastq.gz")
+
+    script:
+    """
+    cat ${params.fastq_pass}/${barcode}/*.fastq.gz > ${sample_name}.fastq.gz
+    gzip -t ${sample_name}.fastq.gz
+    """
+}
 
 process PORECHOP {
     tag "${sample_name}"
@@ -274,20 +294,21 @@ process RESISTOME {
     """
 }
 
-// this will still work with nextflow -preview, whereas the Chanel().view will not
-println "Files in datadir: " + file(infile_pat).collect { it.name }
+// this will still work with nextflow -preview, whereas the Channel().view will not
 
 workflow {
     // set up source channels
-    ch_cat_fastq = Channel
-                    .fromPath(infile_pat, checkIfExists: true)
-                    .map { pth -> 
-                            tuple(
-                              pth.name.replace('.fastq.gz', ''), // isolate sample name to pass through channels 
-                              pth
-                            ) 
 
+    ch_barcodes = Channel
+                    .fromPath(params.barcodes)
+                    .splitCsv(strip: true)
+                    .map { row  ->              // MA011_7_1,62
+                        tuple (
+                            row[0],            // MA011_7_1
+                            'barcode' + row[1] // barcode62
+                        )
                     } 
+    ch_cat_fastq = ch_barcodes | CONCAT
     //ch_diamond_db = DIAMOND_DB.broadcast() // download/format databases
 
     // create an assembly from each input (cat_fastq)
@@ -295,7 +316,6 @@ workflow {
     FLYE(NANOFILT.out.filtered) | MEDAKA 
     PROKKA(MEDAKA.out.consensus)
     PRODIGAL(MEDAKA.out.consensus)
-    
     //ch_assembly = REMOVE_PLASMIDS(MEDAKA.out.consensus)
     // branch on the assembly
     //ch_assembly | PRODIGAL //| DIAMOND(ch_diamond_db) | RESISTOME
