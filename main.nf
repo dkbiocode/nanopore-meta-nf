@@ -12,8 +12,9 @@ params.plasmid_size_select = "10000000" // Passed to seqkit seq -m {}.
                                         // Karla-Vasco used 3M file size using 
                                         // find but I'm subsampling input fastqs
 
-infile_pat="${params.datadir}/*.fastq.gz" // only subsampled by frac
-//infile_pat="${params.datadir}/*.fastq.gz"
+infile_pat="${params.datadir}/50x*.fastq.gz" // smallest sample
+//infile_pat="${params.datadir}/*.*.fastq.gz" // only subsampled by frac
+//infile_pat="${params.datadir}/*.fastq.gz" // everything
 
 // DIAMOND ANNOTATIONS
 diamond_database_path="${launchDir}/HMDARG/hmd-arg.dmnd"
@@ -68,69 +69,53 @@ checkFiles([
 */
 
 process PORECHOP {
+    tag "${sample_name}"
     conda params.nanop_env
 
     input:
-    path fastq_gz
+    tuple val(sample_name), path(fastq_gz)
 
     output:
-    path "${fastq_gz.name.replace('.fastq.gz', '_chop.fastq.gz')}"
+    tuple val(sample_name), path("${sample_name}_chop.fastq.gz")
 
     script:
-    def chop_fastq_gz = fastq_gz.name.replace('.fastq.gz', '_chop.fastq.gz')
     """
-    porechop -t ${task.cpus} -i ${fastq_gz} -o ${chop_fastq_gz}
+    porechop -t ${task.cpus} -i ${fastq_gz} -o ${sample_name}_chop.fastq.gz
     """
 
-/*
-    stub:
-    def chop_fastq_gz = fastq_gz.name.replace('.fastq.gz', '_chop.fastq.gz')
-    """
-    touch ${chop_fastq_gz}
-    """
-*/
 }
 
 process NANOFILT {
+    tag "${sample_name}"
     conda params.nanop_env
     publishDir "${params.nanoq_stats_outdir}", pattern: "*_nanoq_stats.txt"
 
     input: 
-    path chop_fastq_gz
+    tuple val(sample_name), path(chop_fastq_gz)
 
     output:
-    path "${chop_fastq_gz.name.replace('_chop.fastq.gz', '_filt.fastq.gz')}", emit: filtered
-    path "${chop_fastq_gz.name.replace('_chop.fastq.gz', '_nanoq_stats.txt')}", emit: stats
+    tuple val(sample_name), path("${sample_name}_filt.fastq.gz"), emit: filtered
+    path("${sample_name}_nanoq_stats.txt"), emit: stats
 
     script:
-    def nanofilt_fastq_gz = chop_fastq_gz.name.replace('_chop.fastq.gz', '_filt.fastq.gz')
-    def nanofilt_stats_txt = chop_fastq_gz.name.replace('_chop.fastq.gz', '_nanoq_stats.txt')
     """
-    pigz -dc -p ${task.cpus} ${chop_fastq_gz} | nanoq -q 10 -t ${task.cpus} -r ${nanofilt_stats_txt} -o ${nanofilt_fastq_gz} 
+    pigz -dc -p ${task.cpus} ${chop_fastq_gz} | nanoq -q 10 -t ${task.cpus} -r \
+        ${sample_name}_nanoq_stats.txt -o ${sample_name}_filt.fastq.gz
     """
-
-/*
-    stub:
-    def nanofilt_fastq_gz = chop_fastq_gz.name.replace('_chop.fastq.gz', '_filt.fastq.gz')
-    """
-    touch ${nanofilt_fastq_gz}
-    touch ${nanofilt_stats_txt}
-    """
-*/
 }
 
 process FLYE {
+    tag "${sample_name}"
     conda params.nanop_env
     label 'highres' 
 
     input:
-    path nanofilt_fastq_gz
+    tuple val(sample_name), path(nanofilt_fastq_gz)
 
     output:
-    tuple path(nanofilt_fastq_gz), path("30-contigger/contigs.fasta")
+    tuple val(sample_name), path(nanofilt_fastq_gz), path("30-contigger/contigs.fasta")
 
     script:
-    def sample_name = nanofilt_fastq_gz.name - '_filt.fastq.gz'
     """
     flye --nano-raw ${nanofilt_fastq_gz} \
         --out-dir . \
@@ -142,20 +127,20 @@ process FLYE {
 }
 
 process MEDAKA {
+    tag "${sample_name}"
     container params.medaka_sif
     publishDir "${params.medaka_consensus_outdir}", pattern: "medaka_out/*.consensus.fasta"
     publishDir "${params.medaka_gaps_outdir}", pattern: "medaka_out/*.consensus.fasta.gaps_in_draft_coords.bed"
 
     input: 
-    tuple path(nanofilt_fastq_gz), path(contig_fasta)
+    tuple val(sample_name), path(nanofilt_fastq_gz), path(contig_fasta)
 
     output:
-    path "medaka_out/*.consensus.fasta", emit: consensus
+    tuple val(sample_name), path("medaka_out/*.consensus.fasta"), emit: consensus
     path "medaka_out/*.consensus.fasta.gaps_in_draft_coords.bed", emit: gaps
 
 
     script:
-    def sample_name = nanofilt_fastq_gz.name - '_filt.fastq.gz'
     """
     samtools faidx ${contig_fasta}
 
@@ -175,21 +160,20 @@ process MEDAKA {
 }
 
 process REMOVE_PLASMIDS {
+    tag "${sample_name}"
     conda params.nanop_env
     publishDir "${params.assembly_outdir}", pattern: "filtered/*.fasta"
 
     input:
-    path full_assembly_fasta
+    tuple val(sample_name), path(full_assembly_fasta)
 
     output:
-    path "filtered/*.fasta"
+    tuple val(sample_name), path("filtered/*.fasta")
 
     script:
-    def sample_name = full_assembly_fasta.name - '.consensus.fasta'
-    def outfile = "filtered/${sample_name}.fasta"
     """
     mkdir -v filtered
-    seqkit seq -m ${params.plasmid_size_select} < ${full_assembly_fasta} > ${outfile}
+    seqkit seq -m ${params.plasmid_size_select} < ${full_assembly_fasta} > filtered/${sample_name}.fasta
     """
 
     stub:
@@ -198,23 +182,23 @@ process REMOVE_PLASMIDS {
     mkdir -v filtered
     touch ${outfile}
     """
-    
 }
 
+
 process PRODIGAL {
+    tag "${sample_name}"
     conda params.nanop_env
     publishDir "${params.prodigal_coords_gbk_outdir}", pattern: "*_coords.gbk"
     publishDir "${params.prodigal_proteins_outdir}", pattern: "*_proteins.faa"
 
     input:
-    path assembly_fasta
+    tuple val(sample_name), path(assembly_fasta)
 
     output:
     path "*_coords.gbk", emit: prodigal_gbk
     path "*_proteins.faa", emit: prodigal_faa
 
     script:
-    def sample_name = assembly_fasta.name - '.fasta'
     """
     prodigal -i ${assembly_fasta} \
     -o ${sample_name}_coords.gbk \
@@ -223,17 +207,17 @@ process PRODIGAL {
     """
 }
 process PROKKA {
+    tag "${sample_name}"
     conda params.nanop_env
     publishDir params.prokka_out, mode: 'copy'
 
     input:
-    path assembly_fasta
+    tuple val(sample_name), path(assembly_fasta)
 
     output:
     path "*_prokka"
 
     script:
-    def sample_name = assembly_fasta.name - '.fasta'
     """
     prokka ${assembly_fasta} \
     --outdir ${sample_name}_prokka --force \
@@ -245,6 +229,7 @@ process PROKKA {
     """
 }
 process DIAMOND {
+    tag "${sample_name}"
     conda params.nanop_env
 
     input:
@@ -252,7 +237,7 @@ process DIAMOND {
     path diamond_db
 
     output:
-    path "${sample_name}_hmdarg_matches.sam"
+    tuple val(sample_name), path("${sample_name}_hmdarg_matches.sam")
 
     script:
     """
@@ -268,6 +253,7 @@ process DIAMOND {
 }
 
 process RESISTOME {
+    tag "${sample_name}"
     conda params.nanop_env
     publishDir "${params.resistome_outdir}", pattern: "*_hmdarg_*", mode: 'copy'
 
@@ -293,10 +279,15 @@ println "Files in datadir: " + file(infile_pat).collect { it.name }
 
 workflow {
     // set up source channels
-    ch_cat_fastq = Channel.fromPath(infile_pat, checkIfExists: true)
-   .map { pth => tuple(val(pth.name), // isolate sample name to pass through channels 
-                       path(pth)) 
-    } 
+    ch_cat_fastq = Channel
+                    .fromPath(infile_pat, checkIfExists: true)
+                    .map { pth -> 
+                            tuple(
+                              pth.name.replace('.fastq.gz', ''), // isolate sample name to pass through channels 
+                              pth
+                            ) 
+
+                    } 
     //ch_diamond_db = DIAMOND_DB.broadcast() // download/format databases
 
     // create an assembly from each input (cat_fastq)
